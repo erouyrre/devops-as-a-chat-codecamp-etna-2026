@@ -180,7 +180,7 @@ export default function ChatPage() {
   const isExecuting = ["executing", "running", "in_progress"].includes(
     chatState ?? "",
   );
-  const inputDisabled = isExecuting;
+  const inputDisabled = isExecuting || isTyping;
 
   const AuditProgress = ({
     title,

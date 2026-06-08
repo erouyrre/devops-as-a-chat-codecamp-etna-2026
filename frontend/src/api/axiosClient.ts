@@ -7,7 +7,7 @@ import axios, { AxiosError } from "axios";
 const axiosClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000",
   withCredentials: true,
-  timeout: 30000,
+  timeout: 60000,
   headers: { "Content-Type": "application/json" },
 });
 

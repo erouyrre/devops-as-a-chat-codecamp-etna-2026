@@ -320,10 +320,15 @@ async def run_terraform(
                         resource_info=info
                     )
 
+        apply_stderr = (apply_result.stderr or "").strip()
         logs["apply"] = apply_output
+        if apply_stderr:
+            logs["apply_stderr"] = apply_stderr
 
         if apply_result.returncode != 0:
-            raise Exception(f"Erreur 'apply': {apply_output}")
+            # Terraform writes diagnostic blocks (Error:) to stderr; stdout has progress.
+            apply_err = apply_stderr or apply_output
+            raise Exception(f"Erreur 'apply': {apply_err}")
 
         report_progress("terraform_apply_complete",
                         f" Infrastructure déployée ({resources_created} ressources)", 90.0)

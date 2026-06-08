@@ -39,6 +39,37 @@ class AMIResolver:
             "debian_12": "ami-0d1bf5b68307103c2",
             "windows_2022": "ami-0c0933ae5caf0c3f7",
         },
+        "eu-west-3": {
+            "amazonlinux2": "ami-0f61de2873e29e866",
+            "ubuntu_22_04": "ami-0160e8d70ebc43ee1",
+            "ubuntu_20_04": "ami-030bf65e1f3e3dd16",
+            "debian_12": "ami-0a1745bf4ca9e0394",
+            "windows_2022": "ami-04c0e21b4de96a5c8",
+        },
+        "eu-west-2": {
+            "amazonlinux2": "ami-0b4c7755cdf0d9219",
+            "ubuntu_22_04": "ami-0505148b3591e4c07",
+            "debian_12": "ami-0c3a9ab79f8e4c0b6",
+            "windows_2022": "ami-01435a251dbebb4b8",
+        },
+        "eu-central-1": {
+            "amazonlinux2": "ami-05bd8d0d3e028c05c",
+            "ubuntu_22_04": "ami-0faab6bbc0a3a49d1",
+            "debian_12": "ami-0d95ccb7a0e4d2082",
+            "windows_2022": "ami-000c437c8e9d6a7c4",
+        },
+        "us-east-1": {
+            "amazonlinux2": "ami-0c02fb55956c7d316",
+            "ubuntu_22_04": "ami-0557a15b87f6559cf",
+            "debian_12": "ami-0c56e6f9e1b30db77",
+            "windows_2022": "ami-0c10d5f6ef9e7dd5b",
+        },
+        "us-west-2": {
+            "amazonlinux2": "ami-0ceecbb0f30a902a6",
+            "ubuntu_22_04": "ami-0735c191cf914754d",
+            "debian_12": "ami-0ef8cbf1e053f0e42",
+            "windows_2022": "ami-05e7ebcda5e6c2d0d",
+        },
     }
     
     def __init__(self, region: str = "eu-north-1", aws_access_key: str = None, aws_secret_key: str = None):

@@ -37,10 +37,14 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       DAC_AI_PROVIDER: ${DAC_AI_PROVIDER:-mock}
       DAC_AI_MODEL: ${DAC_AI_MODEL:-mistral-small-latest}
+      # Cache partagé des providers Terraform : téléchargé une seule fois et
+      # réutilisé par tous les `terraform init` (évite ~730MB par exécution).
+      TF_PLUGIN_CACHE_DIR: /app/.tf_plugin_cache
     ports:
       - "8000:8000"
     volumes:
       - dac_generated_files:/app/generated_files
+      - dac_tf_plugin_cache:/app/.tf_plugin_cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,3 +69,4 @@ services:
 volumes:
   dac_codecamp_pgdata:
   dac_generated_files:
+  dac_tf_plugin_cache:

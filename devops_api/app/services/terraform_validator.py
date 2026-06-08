@@ -32,6 +32,9 @@ def build_clean_terraform(terraform_code: str, credentials: dict) -> Tuple[str, 
     provider = _detect_provider(code)
     # Petite correction opportuniste sur des SG mal référencés
     code = _fix_sg_vpc_refs(code)
+    # Évite les collisions InvalidGroup.Duplicate quand un apply précédent a
+    # laissé un security group orphelin : on passe en name_prefix (suffixe unique).
+    code = _make_sg_names_unique(code)
 
     # Liste de TOUTES les ressources compute
     computes = _find_compute_resources(code)
@@ -56,12 +59,16 @@ def build_clean_terraform(terraform_code: str, credentials: dict) -> Tuple[str, 
         if provider == "aws" and rtype == "aws_instance":
             try:
                 ami_id = _get_latest_ami_id(distro, region)
+                if not ami_id:
+                    ami_id = _resolve_ami_fallback(distro, region, credentials)
                 if ami_id:
                     code = _replace_ami_in_resource(code, rtype, rname, ami_id)
                 else:
                     logger.warning(f"Aucune AMI trouvée pour distro={distro}, region={region} ; {rname} garde son AMI telle quelle.")
             except Exception as e:
                 logger.warning(f"Echec récupération AMI ({distro}/{region}) pour {rname}: {e}. On continue.")
+            # Enforce free-tier instance type regardless of what the AI generated.
+            code = _enforce_free_tier_instance_type(code, rtype, rname)
 
         # Déplacer les commandes shell -> user_data (dans CE bloc)
         code = _move_shell_to_user_data(code, rtype, rname)
@@ -213,6 +220,49 @@ def _get_latest_ami_id(distro: str, region: str) -> Optional[str]:
         return ami.ami_id if ami else None
     finally:
         db.close()
+
+
+FREE_TIER_INSTANCE_TYPE = os.getenv("DAC_FREE_TIER_INSTANCE_TYPE", "t3.micro")
+
+
+def _enforce_free_tier_instance_type(code: str, resource_type: str, resource_name: str) -> str:
+    """Force instance_type to the free-tier-eligible type inside an aws_instance block.
+
+    The AI sometimes picks non-free-tier types (t3.small, m5.large…) despite the
+    prompt.  We always overwrite it with FREE_TIER_INSTANCE_TYPE.
+
+    Default is t3.micro: under AWS' current free tier (accounts created from 2025
+    onward) t3.micro is the free-tier-eligible type, and t2.micro is *rejected* with
+    "not eligible for Free Tier" in many regions.  Override per-account/region via the
+    DAC_FREE_TIER_INSTANCE_TYPE env var if needed (e.g. "t2.micro" for legacy accounts).
+    """
+    itype = FREE_TIER_INSTANCE_TYPE
+    span = _resource_block_span(code, resource_type, resource_name)
+    if not span:
+        return code
+    start, end, head, body, tail = span
+    if re.search(r'\binstance_type\s*=', body):
+        body = re.sub(r'(\binstance_type\s*=\s*")[^"]*(")', rf'\g<1>{itype}\g<2>', body)
+    else:
+        body = f'\n  instance_type = "{itype}"\n' + body.lstrip()
+    return code[:start] + head + body + tail + code[end:]
+
+
+def _resolve_ami_fallback(distro: str, region: str, credentials: dict) -> Optional[str]:
+    """Use AMIResolver (SSM Parameter Store → hardcoded map) when the DB has no entry."""
+    try:
+        from app.services.ami_resolver import AMIResolver
+        resolver = AMIResolver(
+            region=region,
+            aws_access_key=(credentials or {}).get("aws_access_key_id"),
+            aws_secret_key=(credentials or {}).get("aws_secret_access_key"),
+        )
+        ami_id, _ = resolver.resolve_ami("linux", distro)
+        logger.info(f"AMIResolver fallback: {distro}/{region} -> {ami_id}")
+        return ami_id
+    except Exception as e:
+        logger.warning(f"AMIResolver fallback failed for {distro}/{region}: {e}")
+        return None
 
 
 def _replace_ami_in_resource(code: str, resource_type: str, resource_name: str, ami_id: str) -> str:
@@ -436,6 +486,34 @@ def _ensure_outputs_many(code: str, provider: str, computes: List[Tuple[str, str
 
 
 # ---------- Fixes opportunistes ----------
+
+def _make_sg_names_unique(code: str) -> str:
+    """Convertit un `name = "x"` statique en `name_prefix = "x-"` dans chaque
+    bloc aws_security_group.
+
+    Un nom de SG statique provoque InvalidGroup.Duplicate lorsqu'un apply
+    précédent a partiellement réussi et laissé le SG orphelin dans AWS. Avec
+    name_prefix, AWS ajoute un suffixe unique à chaque run : plus de collision
+    au retry. Les blocs utilisant déjà name_prefix sont laissés intacts.
+    """
+    def repl(m: "re.Match") -> str:
+        block = m.group(0)
+        if re.search(r'\bname_prefix\s*=', block):
+            return block  # déjà unique
+        new_block, n = re.subn(
+            r'\bname\s*=\s*"([^"]*)"',
+            lambda mm: f'name_prefix = "{mm.group(1)}-"',
+            block, count=1,
+        )
+        return new_block if n else block
+
+    return re.sub(
+        r'resource\s+"aws_security_group"\s+"[^"]+"\s*{.*?\n}',
+        repl,
+        code,
+        flags=re.DOTALL,
+    )
+
 
 def _fix_sg_vpc_refs(code: str) -> str:
     """

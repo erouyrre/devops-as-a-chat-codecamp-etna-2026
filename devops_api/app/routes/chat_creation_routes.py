@@ -14,6 +14,23 @@ import json
 import re
 import httpx
 import os
+
+
+def _extract_tf_error(exc: Exception, max_len: int = 800) -> str:
+    """Return the meaningful Terraform error from a potentially long exception string.
+
+    Terraform apply stdout contains refresh lines and the plan before the actual
+    'Error:' block.  Naively truncating from the front hides the real cause.
+    Strategy: look for the first 'Error:' or Terraform box-drawing '╷' marker and
+    return from there.  Fall back to the last max_len chars if no marker is found.
+    """
+    full = str(exc)
+    for marker in ("╷", "\nError:", "Error:"):
+        idx = full.find(marker)
+        if idx != -1:
+            return full[idx:idx + max_len].strip()
+    # No marker – return tail (where errors usually end up)
+    return full[-max_len:].strip()
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.services.gpt_service import analyze_intent
@@ -230,8 +247,8 @@ async def execute_infrastructure_creation(
                     session_id=session_id,
                     chat_id=bg_chat.id,
                     sender="bot",
-                    text=f"Erreur création Terraform: {str(e)[:300]}\nTu peux corriger la demande puis relancer.",
-                    extra={"state": "awaiting_intent", "error": str(e)[:500]},
+                    text=f"Erreur création Terraform: {_extract_tf_error(e)}\nTu peux corriger la demande puis relancer.",
+                    extra={"state": "awaiting_intent", "error": str(e)[-800:]},
                 ))
             db.commit()
         except Exception as notify_error:
@@ -2232,7 +2249,7 @@ async def chat_message(
                     chat_id=chat.id,
                     session_id=session.id,
                     sender="bot",
-                    text=f"ERR Erreur configure: {str(e)[:200]}",
+                    text=f"ERR Erreur configure: {_extract_tf_error(e)}",
                     extra=json.dumps({"state": "awaiting_intent"}),
                 )
                 bg_db.add(final_msg)
